@@ -231,6 +231,11 @@ Hosts sem coordenadas no inventário continuam usando o mapa estático do item (
 
 **b) Estático (`NOC_LOCATIONS_FROM=config`, padrão).** Em `backend/config.py`, ajuste `HOST_LOCATION_MAP` (nome do host no Zabbix → localização) e `LOCATIONS` (rótulo e coordenadas de cada local).
 
+**Locais muito próximos (ex.: Florianópolis, São José e Palhoça).** Vistos do globo inteiro, locais a poucos quilômetros caem no mesmo pixel. O painel tem duas ajudas:
+
+- **Agrupamento:** locais sobrepostos na tela se abrem em círculo ao redor do ponto real; o número no centro é clicável e aproxima até separá-los.
+- **Mapa 2D** (botão *Mapa* no canto superior esquerdo, ou a URL `/#mapa`): Brasil com divisas estaduais e municípios de SC, zoom pela roda do mouse até o nível de rua, atalhos *Brasil / Santa Catarina / Grande Florianópolis / Todos os hosts*, régua de escala e retorno automático ao foco padrão depois de 2 min sem interação (modo TV). Configure em `js/config.js` (`DEFAULT_VIEW`, `MAP2D`). Os mapas são arquivos do IBGE servidos pelo próprio painel (sem tiles externos, a CSP não muda); para detalhar outro estado, ajuste `UF_DETALHE` e rode `python tools/gerar_mapa_brasil.py`.
+
 ### 4. Rodar localmente (desenvolvimento)
 
 ```bash
