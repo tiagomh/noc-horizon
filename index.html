@@ -87,6 +87,18 @@
   <div id="last-update"></div>
 </div>
 <svg id="map"></svg>
+<svg id="map2d" hidden></svg>
+<div id="view-bar">
+  <div class="view-switch" role="tablist" aria-label="Visualização">
+    <button type="button" data-view="globe" role="tab">Globo</button>
+    <button type="button" data-view="map2d" role="tab">Mapa</button>
+  </div>
+  <div id="map2d-presets" hidden></div>
+</div>
+<div id="map2d-hud" hidden>
+  <span id="hud-coords">—</span>
+  <span class="hud-scale"><span id="hud-scale-bar"></span><span id="hud-scale-text"></span></span>
+</div>
 <div id="signature">
   <span class="live-dot"></span>
   <a href="https://github.com/Sheila724" target="_blank" rel="noopener">Desenvolvido por Sheila Alves</a>
@@ -116,7 +128,9 @@
 <script src="js/vendor/d3.min.js"></script>
 <script src="js/vendor/topojson-client.min.js"></script>
 <script src="js/config.js"></script>
+<script src="js/nodes.js"></script>
 <script src="js/map.js"></script>
+<script src="js/map2d.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

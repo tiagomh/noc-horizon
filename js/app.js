@@ -247,6 +247,7 @@ async function fetchStatus() {
     const modeBadge = document.getElementById("mode-badge");
     if (modeBadge) modeBadge.hidden = data.mode !== "demo";
     InfraMap.renderNodes(data.locations, openModal);
+    InfraMap2D.renderNodes(data.locations, openModal);
     updateStatsCard(data.summary);
     updateSidePanel(data.summary);
     updateTicker(data.locations);
@@ -273,7 +274,49 @@ function updateLiveClock() {
 updateLiveClock();
 setInterval(updateLiveClock, 1000);
 
+// Globo 3D ou mapa 2D. Só a visão ativa anima (a outra não gasta CPU).
+const VIEW_HASH = { globe: "#globo", map2d: "#mapa" };
+function setView(view) {
+  if (!VIEW_HASH[view]) view = "globe";
+  const isMap = view === "map2d";
+  // <svg> não tem a propriedade .hidden: precisa ser o atributo
+  document.getElementById("map").toggleAttribute("hidden", isMap);
+  document.getElementById("map2d").toggleAttribute("hidden", !isMap);
+  document.getElementById("map2d-presets").hidden = !isMap;
+  document.getElementById("map2d-hud").hidden = !isMap;
+  document.querySelectorAll("[data-view]").forEach(b => {
+    b.classList.toggle("active", b.dataset.view === view);
+    b.setAttribute("aria-selected", b.dataset.view === view);
+  });
+  InfraMap.setActive(!isMap);
+  InfraMap2D.setActive(isMap);
+  history.replaceState(null, "", VIEW_HASH[view]);
+}
+function setupViews() {
+  const presets = document.getElementById("map2d-presets");
+  CONFIG.MAP2D.PRESETS.forEach(p => {
+    const btn = el("button", null, p.label);
+    btn.type = "button";
+    btn.dataset.preset = p.id;
+    btn.addEventListener("click", () => InfraMap2D.goToPreset(p.id));
+    presets.appendChild(btn);
+  });
+  const all = el("button", null, "Todos os hosts");
+  all.type = "button";
+  all.dataset.preset = "hosts";
+  all.addEventListener("click", () => InfraMap2D.fitHosts());
+  presets.appendChild(all);
+
+  document.querySelectorAll("[data-view]").forEach(b => {
+    b.addEventListener("click", () => setView(b.dataset.view));
+  });
+  const fromHash = Object.keys(VIEW_HASH).find(v => VIEW_HASH[v] === window.location.hash);
+  setView(fromHash || CONFIG.DEFAULT_VIEW);
+}
+
 document.getElementById("modal-close-btn").addEventListener("click", closeModal);
+InfraMap2D.setup();
+setupViews();
 InfraMap.setup(() => {
   fetchMe();
   fetchStatus();
