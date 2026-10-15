@@ -1,6 +1,8 @@
 """
-Agrega os problemas ativos do Zabbix por host e por localização física,
-decide o status de cada um e monta o resumo (summary) do NOC Horizon.
+Agrega os problemas ativos do Zabbix por host e por grupo (os quadros do
+painel), decide o status de cada um e monta o resumo (summary) do NOC Horizon.
+
+Por compatibilidade, a API continua chamando os grupos de "locations".
 
 - `aggregate()` é uma função pura (sem rede, sem config): recebe os dados
   brutos e devolve o snapshot. É o que os testes exercitam.
@@ -30,12 +32,17 @@ def worst(*statuses: str) -> str:
     return max(statuses, key=STATUS_ORDER.index, default="ok")
 
 
+def group_keys(value):
+    """Valor do host_map -> lista de chaves (aceita uma chave só ou uma lista)."""
+    return [value] if isinstance(value, str) else list(value)
+
+
 def aggregate(problems, last_data, host_map, locations, now, stale_after, latency_ms=None):
     """
-    problems:    [{"host", "name", "severity", "acknowledged", "suppressed"}]
+    problems:    [{"host", "name", "severity", "acknowledged", "suppressed", "clock"?}]
     last_data:   {host: unix_ts do dado mais recente} ou None se não foi possível obter
-    host_map:    {host: location_key}
-    locations:   {location_key: {"label", "lat", "lon"}}
+    host_map:    {host: chave do grupo | [chaves]} — um host pode estar em vários grupos
+    locations:   {chave do grupo: {"label"}}
     now:         unix_ts atual
     stale_after: segundos sem dados para o host ser considerado "unknown"
     """
@@ -49,12 +56,13 @@ def aggregate(problems, last_data, host_map, locations, now, stale_after, latenc
             unmapped_problems += 1
 
     hosts_by_loc = {key: [] for key in locations}
-    for host, loc in host_map.items():
-        if loc in hosts_by_loc:
-            hosts_by_loc[loc].append(host)
+    for host, value in host_map.items():
+        for loc in group_keys(value):
+            if loc in hosts_by_loc:
+                hosts_by_loc[loc].append(host)
 
     locations_out = []
-    all_hosts = []
+    all_hosts = {}  # host -> entrada (um host em 3 grupos conta 1 vez no resumo)
     for loc_key, info in locations.items():
         hosts_out = []
         loc_problems = []
@@ -81,7 +89,7 @@ def aggregate(problems, last_data, host_map, locations, now, stale_after, latenc
                 "active_problems": len(active),
             }
             hosts_out.append(host_entry)
-            all_hosts.append(host_entry)
+            all_hosts[host] = host_entry
 
             for p in host_problems:
                 loc_problems.append(
@@ -91,6 +99,7 @@ def aggregate(problems, last_data, host_map, locations, now, stale_after, latenc
                         "severity": p["severity"],
                         "acknowledged": bool(p.get("acknowledged")),
                         "suppressed": bool(p.get("suppressed")),
+                        "since": p.get("clock") or None,
                     }
                 )
 
@@ -101,14 +110,13 @@ def aggregate(problems, last_data, host_map, locations, now, stale_after, latenc
             {
                 "id": loc_key,
                 "label": info["label"],
-                "lat": info["lat"],
-                "lon": info["lon"],
                 "status": loc_status,
                 "hosts": hosts_out,
                 "problems": loc_problems,
             }
         )
 
+    all_hosts = list(all_hosts.values())
     mapped_problems = [p for ps in probs_by_host.values() for p in ps]
     active_problems = [p for p in mapped_problems if not p.get("suppressed")]
     hosts_total = len(all_hosts)
@@ -136,17 +144,27 @@ def aggregate(problems, last_data, host_map, locations, now, stale_after, latenc
 
 
 def resolve_locations(zc):
-    """(host_map, locations) conforme NOC_LOCATIONS_FROM (config ou inventário)."""
+    """(host_map, grupos) conforme NOC_GROUP_BY (hostgroup, inventory ou config)."""
     from config import (
         HOST_LOCATION_MAP,
         LOCATIONS,
         NOC_DISCOVERY_TTL,
+        NOC_GROUP_BY,
         NOC_HOST_TAG,
-        NOC_LOCATIONS_FROM,
+        NOC_HOSTGROUP_PREFIX,
     )
 
-    if NOC_LOCATIONS_FROM != "inventory":
+    if NOC_GROUP_BY == "config":
         return HOST_LOCATION_MAP, LOCATIONS
+
+    if NOC_GROUP_BY == "hostgroup":
+        import groups
+
+        return groups.get_groups(
+            fetch_hosts=lambda: zc.get_hosts_with_groups(NOC_HOST_TAG),
+            prefix=NOC_HOSTGROUP_PREFIX,
+            ttl=NOC_DISCOVERY_TTL,
+        )
 
     import discovery
 

@@ -5,10 +5,10 @@ O histórico vem do próprio Zabbix (event.get) — o NOC Horizon não guarda
 nada em banco. `compute_sla()` é pura e é o que os testes exercitam.
 
 Definições:
-- Um local está INDISPONÍVEL enquanto qualquer host dele tiver um problema
+- Um grupo está INDISPONÍVEL enquanto qualquer host dele tiver um problema
   com severidade >= NOC_SLO_MIN_SEVERITY (padrão: High). Problemas em
   manutenção não contam.
-- Disponibilidade geral = média da disponibilidade dos locais.
+- Disponibilidade geral = média da disponibilidade dos grupos.
 - Orçamento de erro = quanto da indisponibilidade permitida pela meta
   (ex.: 99,5% em 30 dias = 3h36min) ainda não foi gasto.
 - MTTR = tempo médio entre o início e a resolução dos incidentes.
@@ -16,6 +16,8 @@ Definições:
 """
 
 import time
+
+from aggregator import group_keys
 
 DAY = 86400
 WINDOWS = {"7d": 7 * DAY, "30d": 30 * DAY}
@@ -45,17 +47,19 @@ def _mean(values):
 def compute_sla(incidents, host_map, locations, now, target, min_severity, windows=None):
     windows = windows or WINDOWS
     relevant = [i for i in incidents if i["host"] in host_map and i["severity"] >= min_severity]
-    locs_with_hosts = {loc for loc in host_map.values() if loc in locations}
+    locs_with_hosts = {
+        loc for value in host_map.values() for loc in group_keys(value) if loc in locations
+    }
 
     out = {}
     for name, length in windows.items():
         lo = now - length
         intervals = {loc: [] for loc in locs_with_hosts}
         for inc in relevant:
-            loc = host_map[inc["host"]]
-            if loc in intervals:
-                end = inc["end"] if inc["end"] is not None else now
-                intervals[loc].append((inc["start"], end))
+            end = inc["end"] if inc["end"] is not None else now
+            for loc in group_keys(host_map[inc["host"]]):
+                if loc in intervals:
+                    intervals[loc].append((inc["start"], end))
 
         by_location = {
             loc: round(100 * (1 - _union_length(ints, lo, now) / length), 3)

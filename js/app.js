@@ -1,64 +1,292 @@
-// Orquestra: busca dados da API, alimenta o globo, o stats card, o header, o painel e o ticker.
-function severityColorKey(sev) {
-  if (sev <= 2) return "warning";
-  if (sev === 3) return "attention";
-  return "critical";
-}
+// Orquestra: busca dados da API e alimenta o painel de grupos, o card de
+// operação, o header e o ticker.
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function openModal(loc) {
-  document.getElementById("modal-title").textContent = loc.label;
-  const badge = document.getElementById("modal-badge");
-  badge.textContent = CONFIG.STATUS_LABEL[loc.status];
-  badge.style.background = CONFIG.STATUS_COLOR[loc.status] + "33";
-  badge.style.color = CONFIG.STATUS_COLOR[loc.status];
-  badge.style.border = `1px solid ${CONFIG.STATUS_COLOR[loc.status]}`;
-  const slaEl = document.getElementById("modal-sla");
-  if (slaEl) {
-    const w7 = lastSla && lastSla.windows["7d"].locations[loc.id];
-    const w30 = lastSla && lastSla.windows["30d"].locations[loc.id];
-    slaEl.textContent = w7 != null
-      ? `Disponibilidade: 7 dias ${formatPct(w7)} · 30 dias ${formatPct(w30)}`
-      : "";
-  }
-  const list = document.getElementById("modal-problems");
-  list.replaceChildren();
 
-  // Hosts que pararam de enviar dados (status "Sem dados")
-  (loc.hosts || []).filter(h => h.stale).forEach(h => {
-    const div = el("div", "problem stale");
-    div.style.borderLeftColor = CONFIG.STATUS_COLOR.unknown;
-    const msg = h.last_data_age_seconds == null
-      ? "Nenhum dado recebido do Zabbix"
-      : `Sem dados novos há ${formatDuration(h.last_data_age_seconds)}`;
-    div.append(el("div", "name", h.host), el("div", null, msg));
-    list.appendChild(div);
+// ---------- Painel de grupos de hosts ----------
+// Cada grupo é um quadro: verde (tudo OK), amarelo (só severidade baixa),
+// vermelho (alguma severidade alta) ou cinza (host sem dados). Clicar abre os
+// hosts com problema e seus triggers. Dados do Zabbix sempre via textContent.
+
+const expanded = new Set(); // grupos abertos (sobrevivem às atualizações)
+const lastTileStatus = new Map(); // para destacar o quadro que piorou
+let lastGroups = [];
+
+function isHigh(p) {
+  return p.severity >= CONFIG.HIGH_SEVERITY;
+}
+function activeProblems(group) {
+  return (group.problems || []).filter(p => !p.suppressed);
+}
+function tileStatus(group) {
+  const active = activeProblems(group);
+  if (active.some(isHigh)) return "high";
+  if (active.length) return "low";
+  if ((group.hosts || []).some(h => h.stale)) return "nodata";
+  return "ok";
+}
+function rank(status) {
+  return CONFIG.TILE_ORDER.indexOf(status);
+}
+function formatSince(ts) {
+  return ts ? `há ${formatDuration(Math.max(0, Date.now() / 1000 - ts))}` : "";
+}
+
+function matchesFilter(group, query) {
+  if (!query) return true;
+  const q = query.toLocaleLowerCase("pt-BR");
+  return group.label.toLocaleLowerCase("pt-BR").includes(q) ||
+    (group.hosts || []).some(h => h.host.toLocaleLowerCase("pt-BR").includes(q));
+}
+
+function toggleGroup(id) {
+  if (expanded.has(id)) expanded.delete(id);
+  else expanded.add(id);
+  renderBoard(lastGroups);
+}
+
+function createTile(id) {
+  const tile = el("div", "tile");
+  tile.dataset.id = id;
+  tile.tabIndex = 0;
+  tile.setAttribute("role", "button");
+  tile.addEventListener("click", event => {
+    if (event.target.closest(".tile-detail")) return; // clicar na lista não fecha
+    toggleGroup(id);
+  });
+  tile.addEventListener("keydown", event => {
+    if (event.target !== tile) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleGroup(id);
+    }
+  });
+  return tile;
+}
+
+function badge(kind, text) {
+  return el("span", `badge ${kind}`, text);
+}
+
+function fillTile(tile, group, status) {
+  const isOpen = expanded.has(group.id);
+  const prev = lastTileStatus.get(group.id);
+  if (prev && rank(status) > rank(prev)) {
+    tile.classList.add("worsened");
+    setTimeout(() => tile.classList.remove("worsened"), 3500);
+  }
+  lastTileStatus.set(group.id, status);
+
+  CONFIG.TILE_ORDER.forEach(s => tile.classList.toggle(`is-${s}`, s === status));
+  tile.classList.toggle("expanded", isOpen);
+  tile.setAttribute("aria-expanded", String(isOpen));
+  tile.style.setProperty("--tile-color", CONFIG.TILE_COLOR[status]);
+
+  const hosts = group.hosts || [];
+  const active = activeProblems(group);
+  const high = active.filter(isHigh).length;
+  const low = active.length - high;
+  const maint = (group.problems || []).length - active.length;
+  const stale = hosts.filter(h => h.stale).length;
+  const acked = active.filter(p => p.acknowledged).length;
+  const unhealthy = hosts.filter(h => h.status !== "ok").length;
+
+  const head = el("div", "tile-head");
+  const name = el("span", "tile-name", group.label);
+  name.title = group.label;
+  head.append(el("span", "tile-dot"), name, el("span", "tile-chevron", isOpen ? "▾" : "▸"));
+
+  const main = el("div", "tile-main");
+  if (unhealthy) {
+    main.append(
+      el("span", "tile-big", `${unhealthy}`),
+      el("span", "tile-big-label", `de ${hosts.length} ${hosts.length === 1 ? "host" : "hosts"} com problema`)
+    );
+  } else {
+    main.append(
+      el("span", "tile-big", `${hosts.length}`),
+      el("span", "tile-big-label", `${hosts.length === 1 ? "host" : "hosts"} · ${CONFIG.TILE_LABEL[status]}`)
+    );
+  }
+
+  const badges = el("div", "tile-badges");
+  if (high) badges.append(badge("high", `${high} alta`));
+  if (low) badges.append(badge("low", `${low} baixa`));
+  if (stale) badges.append(badge("nodata", `${stale} sem dados`));
+  if (acked) badges.append(badge("ack", `✓ ${acked} reconhecido${acked > 1 ? "s" : ""}`));
+  if (maint) badges.append(badge("maint", `${maint} em manutenção`));
+
+  const foot = el("div", "tile-foot");
+  const sla = lastSla && lastSla.windows["7d"].locations[group.id];
+  foot.append(el("span", null, sla != null ? `Disponib. 7 dias ${formatPct(sla)}` : ""));
+  foot.append(el("span", "tile-hint", isOpen ? "clique para fechar" : active.length || stale ? "clique para ver" : ""));
+
+  const parts = [head, main, badges, foot];
+  if (isOpen) parts.push(buildDetail(group));
+  tile.replaceChildren(...parts);
+}
+
+// Status de um host dentro do quadro aberto
+function hostStatus(host, probs) {
+  const active = probs.filter(p => !p.suppressed);
+  if (active.some(isHigh)) return ["high", CONFIG.TILE_LABEL.high];
+  if (active.length) return ["low", CONFIG.TILE_LABEL.low];
+  if (host.stale) return ["nodata", CONFIG.TILE_LABEL.nodata];
+  return ["maint", "Em manutenção"];
+}
+
+function buildDetail(group) {
+  const detail = el("div", "tile-detail");
+  const byHost = new Map();
+  (group.problems || []).forEach(p => {
+    if (!byHost.has(p.host)) byHost.set(p.host, []);
+    byHost.get(p.host).push(p);
   });
 
-  // Problemas ativos (textContent: nunca interpretar dados do Zabbix como HTML)
-  (loc.problems || []).forEach(p => {
-    const div = el("div", p.suppressed ? "problem suppressed" : "problem");
-    div.style.borderLeftColor = p.suppressed
-      ? "var(--muted)"
-      : CONFIG.STATUS_COLOR[severityColorKey(p.severity)];
-    div.append(el("div", "name", p.host ?? "—"), el("div", null, p.trigger ?? ""));
-    if (p.acknowledged) div.appendChild(el("span", "tag ack", "Reconhecido"));
-    if (p.suppressed) div.appendChild(el("span", "tag maint", "Em manutenção"));
-    list.appendChild(div);
+  const hosts = group.hosts || [];
+  const withIssue = hosts
+    .filter(h => h.stale || byHost.has(h.host))
+    .map(h => {
+      const probs = (byHost.get(h.host) || [])
+        .slice()
+        .sort((a, b) => a.suppressed - b.suppressed || b.severity - a.severity);
+      return { h, probs, status: hostStatus(h, probs) };
+    })
+    .sort((a, b) => rank(b.status[0]) - rank(a.status[0]) || a.h.host.localeCompare(b.h.host));
+  const healthy = hosts.filter(h => !h.stale && !byHost.has(h.host));
+
+  if (!withIssue.length) {
+    detail.append(el("div", "detail-empty", "Nenhum problema ativo neste grupo."));
+  }
+
+  withIssue.forEach(({ h, probs, status: [key, label] }) => {
+    const card = el("div", "host-card");
+    card.style.setProperty("--tile-color", CONFIG.TILE_COLOR[key] || "var(--muted)");
+    const head = el("div", "host-head");
+    head.append(el("span", "host-name", h.host), el("span", "host-status", label));
+    card.append(head);
+
+    if (h.stale) {
+      card.append(el("div", "trigger nodata", h.last_data_age_seconds == null
+        ? "Nenhum dado recebido do Zabbix"
+        : `Sem dados novos há ${formatDuration(h.last_data_age_seconds)}`));
+    }
+    probs.forEach(p => {
+      const row = el("div", p.suppressed ? "trigger suppressed" : "trigger");
+      const sevLabel = CONFIG.SEVERITY_LABEL[p.severity] ?? `Severidade ${p.severity}`;
+      const meta = el("div", "trigger-meta");
+      if (p.since) meta.append(el("span", null, formatSince(p.since)));
+      if (p.acknowledged) meta.append(el("span", "tag ack", "Reconhecido"));
+      if (p.suppressed) meta.append(el("span", "tag maint", "Em manutenção"));
+      row.append(
+        el("span", `sev ${isHigh(p) ? "high" : "low"}`, sevLabel),
+        el("span", "trigger-name", p.trigger ?? ""),
+        meta
+      );
+      card.append(row);
+    });
+    detail.append(card);
   });
 
-  if (!list.children.length) {
-    list.appendChild(el("div", "empty", "Nenhum problema ativo neste local."));
+  if (healthy.length) {
+    const ok = el("div", "healthy");
+    ok.append(el("span", "healthy-label", `${healthy.length} sem problema:`));
+    healthy.forEach(h => ok.append(el("span", "host-chip", h.host)));
+    detail.append(ok);
   }
-  document.getElementById("modal-backdrop").style.display = "flex";
+  return detail;
 }
-function closeModal() {
-  document.getElementById("modal-backdrop").style.display = "none";
+
+function updateBoardCounts(decorated) {
+  const counts = { high: 0, low: 0, nodata: 0, ok: 0 };
+  decorated.forEach(d => { counts[d.status] += 1; });
+  const box = document.getElementById("board-counts");
+  box.replaceChildren(
+    ...["high", "low", "nodata", "ok"]
+      .filter(s => counts[s] > 0)
+      .map(s => {
+        const chip = el("span", `count-chip ${s}`);
+        chip.append(el("span", "count-dot"), el("span", null, `${counts[s]} ${CONFIG.TILE_LABEL[s].toLowerCase()}`));
+        return chip;
+      })
+  );
 }
+
+function renderBoard(groups) {
+  lastGroups = groups;
+  const grid = document.getElementById("board-grid");
+  const query = document.getElementById("board-search").value.trim();
+  const onlyProblems = document.getElementById("board-only-problems").checked;
+
+  // Pior primeiro; empate: mais problemas ativos; depois nome
+  const decorated = groups
+    .map(g => ({ g, status: tileStatus(g), active: activeProblems(g).length }))
+    .sort((a, b) =>
+      rank(b.status) - rank(a.status) ||
+      b.active - a.active ||
+      a.g.label.localeCompare(b.g.label, "pt-BR"));
+  updateBoardCounts(decorated);
+
+  const visible = decorated.filter(d =>
+    (!onlyProblems || d.status !== "ok") && matchesFilter(d.g, query));
+
+  // Reaproveita os quadros existentes (mantém foco e não pisca a tela)
+  const existing = new Map([...grid.children].map(node => [node.dataset.id, node]));
+  visible.forEach(({ g, status }) => {
+    const tile = existing.get(g.id) || createTile(g.id);
+    fillTile(tile, g, status);
+    grid.appendChild(tile);
+    existing.delete(g.id);
+  });
+  existing.forEach(node => node.remove());
+
+  const empty = document.getElementById("board-empty");
+  empty.hidden = visible.length > 0;
+  if (!visible.length) {
+    empty.textContent = !groups.length
+      ? "Nenhum grupo de hosts encontrado. Confira NOC_GROUP_BY e as permissões do usuário da API no Zabbix."
+      : onlyProblems && !query
+        ? "Nenhum grupo com problema — tudo OK ✓"
+        : "Nenhum grupo corresponde ao filtro.";
+  }
+}
+
+function setupBoard() {
+  // O painel começa logo abaixo do cabeçalho, que muda de altura (selo de
+  // demo, usuário logado, tela estreita).
+  const header = document.getElementById("header");
+  const syncHeader = () =>
+    document.documentElement.style.setProperty("--header-h", `${header.offsetHeight}px`);
+  syncHeader();
+  if (window.ResizeObserver) new ResizeObserver(syncHeader).observe(header);
+
+  document.getElementById("board-search").addEventListener("input", () => renderBoard(lastGroups));
+  const only = document.getElementById("board-only-problems");
+  try {
+    only.checked = localStorage.getItem("noc-only-problems") === "1";
+  } catch (e) {
+    /* sem localStorage: começa desmarcado */
+  }
+  only.addEventListener("change", () => {
+    try {
+      localStorage.setItem("noc-only-problems", only.checked ? "1" : "0");
+    } catch (e) {
+      /* ignora */
+    }
+    renderBoard(lastGroups);
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && expanded.size) {
+      expanded.clear();
+      renderBoard(lastGroups);
+    }
+  });
+}
+
 function updateStatsCard(summary) {
   if (!summary) return;
   const locEl = document.getElementById("stat-locations-num");
@@ -126,22 +354,29 @@ function updateSidePanel(summary) {
     latencyEl.textContent = summary.latency_ms != null ? `${summary.latency_ms} ms` : "—";
   }
 }
-function updateTicker(locations) {
+// Só o que precisa de atenção; um problema de host em vários grupos aparece uma vez.
+function updateTicker(groups) {
   const track = document.getElementById("ticker-track");
   if (!track) return;
   const now = new Date().toLocaleTimeString("pt-BR");
-  const spans = [];
-  (locations || []).forEach(loc => {
-    const entries = [];
-    (loc.hosts || []).filter(h => h.stale).forEach(h => {
-      entries.push(["stale", `${loc.label} · ${h.host} · sem dados`]);
+  const seen = new Set();
+  const entries = [];
+  (groups || []).forEach(g => {
+    (g.hosts || []).filter(h => h.stale).forEach(h => {
+      if (seen.has(`s|${h.host}`)) return;
+      seen.add(`s|${h.host}`);
+      entries.push(["stale", `${g.label} · ${h.host} · sem dados`]);
     });
-    (loc.problems || []).filter(p => !p.suppressed).forEach(p => {
-      entries.push(["problem", `${loc.label} · ${p.host ?? "—"} · ${p.trigger}` + (p.acknowledged ? " ✓" : "")]);
+    activeProblems(g).forEach(p => {
+      const key = `p|${p.host}|${p.trigger}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push([isHigh(p) ? "high" : "problem",
+        `${g.label} · ${p.host ?? "—"} · ${p.trigger}` + (p.acknowledged ? " ✓" : "")]);
     });
-    if (!entries.length) entries.push(["", `${loc.label} · operacional`]);
-    entries.forEach(([cls, text]) => spans.push(el("span", cls || null, `[${now}] ${text}`)));
   });
+  if (!entries.length) entries.push(["", "Todos os grupos operacionais"]);
+  const spans = entries.map(([cls, text]) => el("span", cls || null, `[${now}] ${text}`));
   // duplicado para o efeito de rolagem contínua
   track.replaceChildren(...spans, ...spans.map(s => s.cloneNode(true)));
 }
@@ -203,7 +438,7 @@ function updateSlaPanel(sla) {
   const label = document.getElementById("label-availability");
   if (label) {
     label.textContent = `Disponib. (meta ${sla.target}%)`;
-    label.title = `Disponibilidade média dos locais; meta (SLO) de ${sla.target}%`;
+    label.title = `Disponibilidade média dos grupos; meta (SLO) de ${sla.target}%`;
   }
 
   setValue("panel-availability", formatPct(w.availability),
@@ -233,6 +468,7 @@ async function fetchSla() {
     if (!data.ok) throw new Error(data.erro || "erro desconhecido");
     lastSla = data;
     updateSlaPanel(data);
+    renderBoard(lastGroups); // disponibilidade por grupo nos quadros
   } catch (e) {
     console.warn("Confiabilidade indisponível:", e.message);
   }
@@ -246,7 +482,7 @@ async function fetchStatus() {
     if (!data.ok) throw new Error(data.erro || "erro desconhecido");
     const modeBadge = document.getElementById("mode-badge");
     if (modeBadge) modeBadge.hidden = data.mode !== "demo";
-    InfraMap.renderNodes(data.locations, openModal);
+    renderBoard(data.locations);
     updateStatsCard(data.summary);
     updateSidePanel(data.summary);
     updateTicker(data.locations);
@@ -273,11 +509,9 @@ function updateLiveClock() {
 updateLiveClock();
 setInterval(updateLiveClock, 1000);
 
-document.getElementById("modal-close-btn").addEventListener("click", closeModal);
-InfraMap.setup(() => {
-  fetchMe();
-  fetchStatus();
-  fetchSla();
-  setInterval(fetchStatus, CONFIG.POLL_INTERVAL_MS);
-  setInterval(fetchSla, CONFIG.SLA_POLL_INTERVAL_MS);
-});
+setupBoard();
+fetchMe();
+fetchStatus();
+fetchSla();
+setInterval(fetchStatus, CONFIG.POLL_INTERVAL_MS);
+setInterval(fetchSla, CONFIG.SLA_POLL_INTERVAL_MS);

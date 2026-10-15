@@ -21,6 +21,4 @@ repos:
       - id: detect-private-key
       - id: check-merge-conflict
       - id: end-of-file-fixer
-        exclude: ^(js/vendor/|data/)
       - id: trailing-whitespace
-        exclude: ^(js/vendor/|data/)

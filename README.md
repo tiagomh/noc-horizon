@@ -1,12 +1,12 @@
 # 🛰️ NOC Horizon
 
-**Central de Operações com monitoramento global em tempo real**, construída para visualizar de forma clara e imediata a saúde de uma infraestrutura distribuída — hosts, alertas e latência — direto sobre um globo interativo.
+**Central de Operações com monitoramento em tempo real**, construída para visualizar de forma clara e imediata a saúde de uma infraestrutura — hosts, alertas e latência — em quadros por grupo de hosts do Zabbix: verde, amarelo ou vermelho, e um clique mostra os hosts e triggers com problema.
 
 [![CI](https://github.com/Sheila724/noc-horizon/actions/workflows/ci.yml/badge.svg)](https://github.com/Sheila724/noc-horizon/actions/workflows/ci.yml)
 ![Status](https://img.shields.io/badge/status-em%20produção-22d67a?style=flat-square)
 ![Backend](https://img.shields.io/badge/backend-Python%20%2B%20Flask-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Dados](https://img.shields.io/badge/dados-Zabbix%20API-ff9a3d?style=flat-square)
-![Frontend](https://img.shields.io/badge/frontend-D3.js-f0c93d?style=flat-square)
+![Frontend](https://img.shields.io/badge/frontend-JS%20puro-f0c93d?style=flat-square)
 ![Testes](https://img.shields.io/badge/testes-pytest-0a9edc?style=flat-square&logo=pytest&logoColor=white)
 ![Lint](https://img.shields.io/badge/lint-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)
 ![Segredos](https://img.shields.io/badge/segredos-gitleaks-ff3b5c?style=flat-square)
@@ -27,7 +27,7 @@ docker compose up -d --build
 
 Abra **http://localhost:8080** 🚀
 
-O painel sobe em **modo demo**: 12 locais pelo mundo e 42 hosts simulados, com incidentes que aparecem, são reconhecidos e resolvidos sozinhos, um host em manutenção e outro que para de enviar dados de tempos em tempos. Para desligar: `docker compose down`.
+O painel sobe em **modo demo**: 10 grupos de hosts (sites e funções, como num Zabbix real) e 21 hosts simulados, com incidentes que aparecem, são reconhecidos e resolvidos sozinhos, um host em manutenção e outro que para de enviar dados de tempos em tempos. Para desligar: `docker compose down`.
 
 **Sem Docker?** Com Python 3.10+ também dá:
 
@@ -42,6 +42,8 @@ python backend/dev_server.py
 
 ## 📺 Demonstração
 
+> Os vídeos abaixo são da versão anterior do painel (com o globo). A visão atual é a de quadros por grupo de hosts — rode o modo demo para ver (seção *Teste em 1 minuto*).
+
 **Visão geral do dashboard:**
 
 https://github.com/user-attachments/assets/ddbfa4f6-a8f8-4421-b15a-42b760ef7bef
@@ -54,7 +56,7 @@ https://github.com/user-attachments/assets/6822855c-ed64-4944-84a4-fa0967a7dde9
 
 ## ✨ Visão Geral
 
-O **NOC Horizon** é um painel de monitoramento (NOC — *Network Operations Center*) que consome dados em tempo real do **Zabbix** e os apresenta em um globo interativo construído com **D3.js**. Cada localização de infraestrutura é plotada geograficamente, com conexões animadas entre os pontos e o status de saúde de cada um (saudável, atenção, alerta ou crítico).
+O **NOC Horizon** é um painel de monitoramento (NOC — *Network Operations Center*) que consome dados em tempo real do **Zabbix** e os apresenta como **quadros, um por grupo de hosts**. Cada quadro tem a cor do pior problema ativo do grupo: 🟢 tudo OK, 🟡 só triggers de severidade baixa, 🔴 algum trigger de severidade alta (⚪ quando um host para de enviar dados). Clicar no quadro abre os hosts com problema e os triggers de cada um.
 
 O objetivo é dar, em poucos segundos, uma leitura visual e intuitiva do estado da operação — sem precisar navegar por múltiplas telas do Zabbix.
 
@@ -62,26 +64,27 @@ O objetivo é dar, em poucos segundos, uma leitura visual e intuitiva do estado 
 
 ## 🚀 Funcionalidades
 
-- 🌍 **Globo interativo** com rotação/arraste, construído em SVG + D3.js
-- 📍 **Localizações geolocalizadas** representando os pontos de infraestrutura monitorados
-- 🔴🟡🟢 **Indicadores de severidade** por cor (saudável, atenção, alerta, crítico), derivados da severidade dos problemas ativos no Zabbix
+- 🟩 **Quadros por grupo de hosts** do Zabbix, ordenados do pior para o melhor (vermelho, amarelo, cinza, verde). Um host em vários grupos aparece em todos eles
+- 🔴🟡🟢 **Cores por severidade**: vermelho a partir de *High* (configurável em `js/config.js`), amarelo para as demais
+- 🔎 **Clique para expandir**: hosts com problema, severidade, nome do trigger, há quanto tempo está ativo, reconhecido/em manutenção — e a lista dos hosts sem problema
+- 🧭 **Filtro** por nome de grupo ou host e opção **"Só com problema"** (lembrada no navegador)
+- ⚡ Quadro que **acabou de piorar pisca** por alguns segundos; vermelho pulsa enquanto durar
 - ⚪ **Detecção de "sem dados"** — host que para de enviar métricas fica cinza, em vez de continuar verde (falha silenciosa)
-- ✅ **Problemas reconhecidos** (*acknowledged*) sinalizados, e **problemas em manutenção** exibidos esmaecidos, sem colorir o local
+- ✅ **Problemas reconhecidos** (*acknowledged*) sinalizados, e **problemas em manutenção** exibidos esmaecidos, sem colorir o grupo
 - 📊 **Painel unificado de operação**, mostrando:
-  - Total de locais, hosts e alertas ativos
+  - Total de grupos, hosts e alertas ativos
   - Saúde geral (% de **hosts** sem problema ativo e com dados recentes)
   - Triggers ativos (e quantos já foram reconhecidos)
   - Hosts com problema e hosts sem dados
   - Idade do dado mais antigo coletado
   - Latência da API do Zabbix
-- 🪟 **Modal detalhado por localização**, com a lista de problemas ativos em cada host
-- 📰 **Ticker contínuo** no rodapé com os problemas ativos e o status operacional de cada local
+- 📰 **Ticker contínuo** no rodapé com os problemas ativos e os hosts sem dados
 - 🔄 **Atualização automática** via polling configurável
 - ⚡ **Cache no backend** — vários navegadores abertos não multiplicam as consultas ao Zabbix
 - 🔐 **Login com OIDC** no Apache (`mod_auth_openidc`): Google, Keycloak, Azure AD ou qualquer provedor OpenID Connect, sem alterar o código
-- 📈 **Confiabilidade (SLO)** — disponibilidade de 7 e 30 dias por local, orçamento de erro, MTTR e MTTA, calculados a partir do histórico de eventos do Zabbix
-- 📍 **Locais automáticos pelo inventário do Zabbix** — cadastre latitude/longitude no host e ele aparece no globo, sem editar código
-- 🌐 **Frontend sem build e sem CDN** — HTML, CSS e JS puros, com as bibliotecas servidas localmente
+- 📈 **Confiabilidade (SLO)** — disponibilidade de 7 e 30 dias por grupo, orçamento de erro, MTTR e MTTA, calculados a partir do histórico de eventos do Zabbix
+- 🔁 **Grupos automáticos** — lidos do Zabbix (`host.get`), sem editar código; filtre por prefixo (`NOC_HOSTGROUP_PREFIX`) ou tag
+- 🌐 **Frontend sem build, sem CDN e sem bibliotecas** — HTML, CSS e JS puros
 
 ---
 
@@ -100,12 +103,12 @@ O objetivo é dar, em poucos segundos, uma leitura visual e intuitiva do estado 
        estáticos    ▼           ▼
        ┌──────────────┐   ┌──────────────────┐  JSON-RPC   ┌─────────────┐
        │ Frontend     │   │ Backend (Flask   │ ──────────► │   Zabbix    │
-       │ D3 + TopoJSON│   │ + Gunicorn)      │  token API  │   Server    │
+       │ HTML/CSS/JS  │   │ + Gunicorn)      │  token API  │   Server    │
        └──────────────┘   └──────────────────┘ (somente    └─────────────┘
                                                 leitura)
 ```
 
-O **backend em Python** consulta a API do Zabbix, agrega os problemas por localização/host e expõe um endpoint JSON (`GET /api/locations`), consumido periodicamente pelo frontend (`js/app.js`) via `fetch`. O backend escuta **somente em `127.0.0.1`**; o acesso externo passa sempre pelo Apache.
+O **backend em Python** consulta a API do Zabbix, agrega os problemas por grupo de hosts/host e expõe um endpoint JSON (`GET /api/locations`), consumido periodicamente pelo frontend (`js/app.js`) via `fetch`. O backend escuta **somente em `127.0.0.1`**; o acesso externo passa sempre pelo Apache.
 
 ---
 
@@ -114,7 +117,6 @@ O **backend em Python** consulta a API do Zabbix, agrega os problemas por locali
 | Camada         | Tecnologia |
 |----------------|------------|
 | Frontend       | HTML5, CSS3, JavaScript (vanilla) |
-| Visualização   | [D3.js](https://d3js.org/) v7 + [TopoJSON](https://github.com/topojson/topojson) + [world-atlas](https://github.com/topojson/world-atlas) |
 | Backend        | Python 3.10+, Flask, Gunicorn |
 | Fonte de dados | [Zabbix API](https://www.zabbix.com/documentation/current/en/manual/api) (testado com Zabbix 7.x) |
 | Servidor       | Apache (arquivos estáticos + proxy reverso para a API) |
@@ -136,28 +138,25 @@ noc-horizon/
 ├── docs/
 │   ├── operacao.md         # Runbook: deploy, segredos, saúde e solução de problemas
 │   └── postmortems/        # Análises de incidentes (formato blameless)
-├── index.html              # Estrutura da página (header, cards, globo, ticker, modal)
+├── index.html              # Estrutura da página (header, card, quadros, ticker)
 ├── favicon.svg
 ├── css/
 │   └── style.css           # Estilos visuais (tema dark, glassmorphism, animações)
 ├── js/
-│   ├── config.js           # Configurações (URL da API, polling, cores/labels de status)
-│   ├── map.js              # Renderização do globo e dos nós geográficos com D3.js
-│   ├── app.js              # Orquestração: busca de dados, cards, ticker e modal
-│   └── vendor/             # d3.min.js e topojson-client.min.js (servidos localmente)
-├── data/
-│   └── countries-110m.json # Mapa-múndi (world-atlas)
+│   ├── config.js           # Configurações (URL da API, polling, severidade alta, cores)
+│   └── app.js              # Busca de dados, quadros dos grupos, card de operação e ticker
 ├── public/                 # Páginas públicas do login: acesso negado e "você saiu"
 └── backend/
     ├── app.py              # Rotas HTTP (/api/locations, /health) + cache
-    ├── aggregator.py       # Status por host/local e resumo (função pura, testável)
+    ├── aggregator.py       # Status por host/grupo e resumo (função pura, testável)
     ├── zabbix_client.py    # Cliente da API JSON-RPC do Zabbix
     ├── demo_source.py      # Dados simulados para o modo demo
-    ├── discovery.py        # Locais lidos do inventário do Zabbix
+    ├── groups.py           # Quadros a partir dos grupos de hosts do Zabbix
+    ├── discovery.py        # Grupos pelo campo Location do inventário (opcional)
     ├── sla.py              # Disponibilidade, SLO, orçamento de erro, MTTR e MTTA
     ├── dev_server.py       # Servidor local sem Docker (frontend + API)
     ├── Dockerfile          # Imagem do backend (usuário sem privilégios)
-    ├── config.py           # Mapa host → localização; lê segredos do ambiente
+    ├── config.py           # Agrupamento e mapa estático opcional; lê segredos do ambiente
     ├── requirements.txt
     ├── requirements-dev.txt
     ├── pytest.ini
@@ -180,8 +179,8 @@ noc-horizon/
 
 Não use o usuário Admin. No Zabbix:
 
-1. **Users → User roles** → crie um papel do tipo *User*, sem acesso à interface, com **API** permitida apenas para `problem.get`, `trigger.get` e `item.get` (mais `host.get` para os locais pelo inventário e `event.get` para a confiabilidade/SLO).
-2. **Users → User groups** → crie um grupo com *Frontend access: Disabled* e permissão **Read** apenas nos grupos de hosts exibidos no mapa.
+1. **Users → User roles** → crie um papel do tipo *User*, sem acesso à interface, com **API** permitida apenas para `problem.get`, `trigger.get` e `item.get` mais **`host.get`** (para ler os grupos de hosts) e `event.get` (para a confiabilidade/SLO).
+2. **Users → User groups** → crie um grupo com *Frontend access: Disabled* e permissão **Read** apenas nos grupos de hosts exibidos no painel.
 3. **Users → Users** → crie o usuário do painel com esse grupo e papel.
 4. **Users → API tokens** → gere um token para esse usuário (com data de expiração).
 
@@ -205,9 +204,10 @@ Todas as variáveis:
 | `NOC_MODE` | `zabbix` | `zabbix` (dados reais) ou `demo` (dados simulados, sem Zabbix) |
 | `ZABBIX_URL` | — | URL da API (`.../api_jsonrpc.php`). Obrigatória no modo `zabbix` |
 | `ZABBIX_API_TOKEN` | — | Token de um usuário **somente leitura**. Obrigatório no modo `zabbix` |
-| `NOC_LOCATIONS_FROM` | `config` | `config` (mapa no `config.py`) ou `inventory` (inventário do Zabbix) |
-| `NOC_HOST_TAG` | — | Se definida, só hosts com esta tag entram no globo |
-| `NOC_DISCOVERY_TTL` | `300` | Segundos entre releituras do inventário |
+| `NOC_GROUP_BY` | `hostgroup` | `hostgroup` (grupos de hosts do Zabbix), `inventory` (campo *Location* do inventário) ou `config` (mapa no `config.py`). `NOC_LOCATIONS_FROM` (nome antigo) também é aceito |
+| `NOC_HOSTGROUP_PREFIX` | — | Só grupos com este prefixo viram quadros; o prefixo sai do nome (ex.: `NOC/`) |
+| `NOC_HOST_TAG` | — | Se definida, só hosts com esta tag entram no painel |
+| `NOC_DISCOVERY_TTL` | `300` | Segundos entre releituras dos grupos de hosts |
 | `NOC_STALE_AFTER_SECONDS` | `600` | Sem dados por mais que isso → host fica **Sem dados** |
 | `NOC_SLO_TARGET` | `99.5` | Meta de disponibilidade (%) |
 | `NOC_SLO_MIN_SEVERITY` | `4` | Severidade mínima que conta como indisponibilidade (4 = *High*) |
@@ -215,21 +215,20 @@ Todas as variáveis:
 
 Em produção, esses valores ficam em um arquivo fora do projeto (ex.: `/etc/noc-horizon/env`, com permissão `640`), carregado pelo systemd.
 
-### 3. Mapear hosts e localizações
+### 3. Grupos de hosts (os quadros do painel)
 
-Há dois jeitos — escolha com a variável `NOC_LOCATIONS_FROM`:
+Por padrão (`NOC_GROUP_BY=hostgroup`), **cada grupo de hosts do Zabbix com hosts monitorados vira um quadro** — nada para configurar no código:
 
-**a) Pelo inventário do Zabbix (`NOC_LOCATIONS_FROM=inventory`) — recomendado.** O globo se monta sozinho a partir do Zabbix, sem editar código:
+1. No papel (*role*) do usuário da API, libere também o método **`host.get`**.
+2. Dê ao grupo de usuários permissão **Read** nos grupos de hosts que devem aparecer.
+3. Opcional, recomendado em ambientes grandes: crie grupos só para o NOC, com um prefixo (ex.: `NOC/Firewalls`, `NOC/Filial São José`, `NOC/Links WAN`) e defina `NOC_HOSTGROUP_PREFIX=NOC/`. Só esses grupos viram quadros, e o nome aparece sem o prefixo.
+4. Opcional: `NOC_HOST_TAG=noc` para que só hosts com a tag `noc` entrem.
 
-1. Em cada host: **Data collection → Hosts → (host) → aba Inventory**, escolha *Manual* (ou *Automatic*) e preencha:
-   - **Location** — nome do local no mapa (ex.: `São Paulo (BR)`). Hosts com o mesmo *Location* viram um único ponto.
-   - **Latitude** e **Longitude** — em graus decimais (ex.: `-23.55` e `-46.63`; vírgula também é aceita).
-2. No papel (*role*) do usuário da API, libere também o método **`host.get`**.
-3. Opcional: defina `NOC_HOST_TAG=noc` para que só hosts com a tag `noc` entrem no globo.
+Um host em vários grupos aparece em todos os quadros, mas conta **uma vez** nos totais. A lista de grupos é relida a cada 5 minutos (`NOC_DISCOVERY_TTL`) e, se o Zabbix falhar, a última lista válida continua sendo usada.
 
-Hosts sem coordenadas no inventário continuam usando o mapa estático do item (b). A lista é relida a cada 5 minutos (`NOC_DISCOVERY_TTL`) e, se o Zabbix falhar, a última lista válida continua sendo usada.
+A cor de cada quadro é decidida no navegador: **vermelho** se algum problema ativo tiver severidade ≥ `HIGH_SEVERITY` (padrão 4 = *High*, em `js/config.js`), **amarelo** se houver só problemas de severidade menor, **cinza** se algum host estiver sem dados, **verde** caso contrário.
 
-**b) Estático (`NOC_LOCATIONS_FROM=config`, padrão).** Em `backend/config.py`, ajuste `HOST_LOCATION_MAP` (nome do host no Zabbix → localização) e `LOCATIONS` (rótulo e coordenadas de cada local).
+Alternativas: `NOC_GROUP_BY=inventory` agrupa pelo campo *Location* do inventário de cada host (com *Latitude*/*Longitude* preenchidas); `NOC_GROUP_BY=config` usa o mapa estático `HOST_LOCATION_MAP`/`LOCATIONS` do `backend/config.py`.
 
 ### 4. Rodar localmente (desenvolvimento)
 
@@ -242,7 +241,7 @@ export ZABBIX_URL=... ZABBIX_API_TOKEN=...   # PowerShell: $env:ZABBIX_URL="..."
 flask --app app run
 ```
 
-Para ver o frontend, sirva a raiz do projeto com um servidor estático (ex.: Live Server do VS Code). Abrir o `index.html` direto do disco não funciona, pois o navegador bloqueia o carregamento do mapa.
+Para ver o frontend, sirva a raiz do projeto com um servidor estático (ex.: Live Server do VS Code). Abrir o `index.html` direto do disco não funciona, pois o navegador bloqueia as chamadas à API.
 
 ### 5. Testes
 
@@ -252,7 +251,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Os testes cobrem a lógica de status e do resumo: cálculo de saúde por host, problemas fora do mapa, estado "sem dados", reconhecidos e manutenção.
+Os testes cobrem a lógica de status e do resumo: cálculo de saúde por host, host em vários grupos, problemas de hosts fora dos grupos, estado "sem dados", reconhecidos e manutenção.
 
 Para desenvolver, instale os hooks locais uma vez — eles rodam **gitleaks** (bloqueia commit com token/senha) e **ruff** a cada commit:
 
@@ -316,17 +315,17 @@ Recomenda-se publicar o painel com **HTTPS** (Let's Encrypt ou certificado de or
 
 ## 🚦 Como o status é calculado
 
-| Status | Quando |
+| Quadro | Quando |
 |---|---|
-| 🟢 Saudável | Nenhum problema ativo e dados recebidos há menos de `NOC_STALE_AFTER_SECONDS` |
-| ⚪ Sem dados | O host não envia dados novos há mais que o limite (ou nunca enviou) |
-| 🟡 Atenção | Pior problema ativo com severidade *Not classified*, *Information* ou *Warning* |
-| 🟠 Alerta | Pior problema ativo com severidade *Average* |
-| 🔴 Crítico | Pior problema ativo com severidade *High* ou *Disaster* |
+| 🟢 Tudo OK | Nenhum problema ativo e todos os hosts com dados recentes |
+| 🟡 Severidade baixa | Há problemas ativos, todos com severidade abaixo de *High* (*Not classified* a *Average*) |
+| 🔴 Severidade alta | Algum problema ativo com severidade *High* ou *Disaster* |
+| ⚪ Sem dados | Nenhum problema ativo, mas algum host não envia dados novos há mais que `NOC_STALE_AFTER_SECONDS` |
 
-- O status de um **local** é o pior status entre os seus hosts.
-- Problemas **em manutenção** aparecem no detalhe, mas não colorem o local nem entram no total de alertas.
-- Problemas de hosts que não estão no mapa não entram no total (ficam em `unmapped_problems` na API).
+- O limite entre amarelo e vermelho é o `HIGH_SEVERITY` do `js/config.js` (padrão 4 = *High*).
+- Problemas **em manutenção** aparecem no detalhe, mas não colorem o grupo nem entram no total de alertas.
+- Problemas de hosts que não estão em nenhum grupo exibido não entram no total (ficam em `unmapped_problems` na API).
+- Por compatibilidade, a API (`/api/locations`) ainda chama os grupos de `locations`.
 
 ---
 
@@ -359,7 +358,7 @@ O painel lateral mostra a confiabilidade dos **últimos 7 dias** e o modal de ca
 
 | Métrica | Como é calculada |
 |---|---|
-| **Disponibilidade** | Um local fica indisponível enquanto qualquer host dele tiver um problema com severidade ≥ `NOC_SLO_MIN_SEVERITY` (padrão: *High*). Problemas em manutenção não contam. A disponibilidade geral é a média dos locais. |
+| **Disponibilidade** | Um grupo fica indisponível enquanto qualquer host dele tiver um problema com severidade ≥ `NOC_SLO_MIN_SEVERITY` (padrão: *High*). Problemas em manutenção não contam. A disponibilidade geral é a média dos grupos. |
 | **Meta (SLO)** | `NOC_SLO_TARGET` (padrão `99.5`%). |
 | **Orçamento de erro** | Quanto da indisponibilidade permitida pela meta ainda não foi gasto. Ex.: 99,5% em 7 dias permite ~50 min fora do ar. |
 | **MTTR** | Tempo médio entre o início e a resolução dos incidentes da janela. |
@@ -403,7 +402,7 @@ O **Dependabot** abre PRs semanais com atualizações de dependências Python e 
 - [x] Autenticação/controle de acesso ao painel (OIDC no Apache)
 - [ ] Papéis (RBAC): `noc-viewer` (só ver) e `noc-operator` (reconhecer problemas pelo painel)
 - [ ] Suporte a múltiplos provedores de monitoramento além do Zabbix
-- [ ] Histórico de disponibilidade (uptime) por localização
+- [ ] Histórico de disponibilidade (uptime) por grupo
 
 ---
 

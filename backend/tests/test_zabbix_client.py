@@ -95,3 +95,24 @@ def test_get_inventory_hosts_envia_filtro_de_tag(monkeypatch):
     zabbix_client.get_inventory_hosts("noc")
     assert sent["method"] == "host.get"
     assert sent["params"]["tags"] == [{"tag": "noc", "operator": 4}]
+
+
+def test_get_hosts_with_groups(monkeypatch):
+    def _call(method, params, authenticated=True):
+        assert params["selectHostGroups"] == ["name"]
+        return [{"host": "web1", "name": "Web 1", "hostgroups": [{"name": "A"}, {"name": "B"}]}]
+
+    monkeypatch.setattr(zabbix_client, "_call", _call)
+    assert zabbix_client.get_hosts_with_groups() == [
+        {"host": "web1", "name": "Web 1", "groups": ["A", "B"]}
+    ]
+
+
+def test_get_hosts_with_groups_zabbix_antigo_usa_select_groups(monkeypatch):
+    def _call(method, params, authenticated=True):
+        if "selectHostGroups" in params:
+            raise RuntimeError({"code": -32602, "message": "Invalid params."})
+        return [{"host": "db1", "name": "db1", "groups": [{"name": "Banco"}]}]
+
+    monkeypatch.setattr(zabbix_client, "_call", _call)
+    assert zabbix_client.get_hosts_with_groups()[0]["groups"] == ["Banco"]

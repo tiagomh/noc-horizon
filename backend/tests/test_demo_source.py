@@ -10,8 +10,14 @@ def snap(now):
     return aggregate(**demo_source.generate(now), now=now, stale_after=600)
 
 
-def test_todos_os_hosts_pertencem_a_um_local():
-    assert set(demo_source.HOST_MAP.values()) <= set(demo_source.LOCATIONS)
+def test_todos_os_hosts_pertencem_a_grupos_existentes():
+    for groups in demo_source.HOST_MAP.values():
+        assert groups and set(groups) <= set(demo_source.LOCATIONS)
+
+
+def test_todo_grupo_tem_hosts():
+    usados = {g for groups in demo_source.HOST_MAP.values() for g in groups}
+    assert usados == set(demo_source.LOCATIONS)
 
 
 def test_snapshot_valido():

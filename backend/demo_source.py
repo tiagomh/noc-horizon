@@ -1,7 +1,9 @@
 """
-Fonte de dados de DEMONSTRAÇÃO — simula um Zabbix com vários locais pelo mundo.
+Fonte de dados de DEMONSTRAÇÃO — simula um Zabbix com grupos de hosts.
 
 Usada quando NOC_MODE=demo: permite rodar o NOC Horizon sem nenhum Zabbix.
+Como num Zabbix real, cada host está em dois grupos: o do site (ex.: "Filial
+São José") e o da função (ex.: "Firewalls").
 Os dados são determinísticos por minuto (todos os workers e navegadores veem
 o mesmo estado) e evoluem com o tempo: problemas surgem, são reconhecidos e
 resolvidos; um host entra em manutenção; outro às vezes para de enviar dados.
@@ -10,25 +12,42 @@ resolvidos; um host entra em manutenção; outro às vezes para de enviar dados.
 import hashlib
 import math
 
-LOCATIONS = {
-    "sao-paulo": {"label": "São Paulo (BR)", "lat": -23.55, "lon": -46.63},
-    "fortaleza": {"label": "Fortaleza (BR)", "lat": -3.73, "lon": -38.52},
-    "santiago": {"label": "Santiago (CL)", "lat": -33.45, "lon": -70.67},
-    "virginia": {"label": "Virgínia (US)", "lat": 38.95, "lon": -77.45},
-    "oregon": {"label": "Oregon (US)", "lat": 45.60, "lon": -121.18},
-    "frankfurt": {"label": "Frankfurt (DE)", "lat": 50.11, "lon": 8.68},
-    "estocolmo": {"label": "Estocolmo (SE)", "lat": 59.33, "lon": 18.07},
-    "joanesburgo": {"label": "Joanesburgo (ZA)", "lat": -26.20, "lon": 28.05},
-    "mumbai": {"label": "Mumbai (IN)", "lat": 19.08, "lon": 72.88},
-    "singapura": {"label": "Singapura (SG)", "lat": 1.35, "lon": 103.82},
-    "toquio": {"label": "Tóquio (JP)", "lat": 35.68, "lon": 139.69},
-    "sydney": {"label": "Sydney (AU)", "lat": -33.87, "lon": 151.21},
+_SITES = {
+    "floripa-dc": (
+        "Datacenter Florianópolis",
+        ["web-01", "web-02", "db-01", "db-02", "fw-01", "sw-01", "wan-01"],
+    ),
+    "sao-jose": ("Filial São José", ["web-01", "db-01", "fw-01", "sw-01", "wan-01"]),
+    "palhoca": ("CD Palhoça", ["wms-01", "fw-01", "sw-01", "wan-01"]),
+    "biguacu": ("Loja Biguaçu", ["fw-01", "wan-01"]),
+    "sao-paulo": ("Escritório São Paulo", ["web-01", "fw-01", "wan-01"]),
 }
 
-_ROLES = ["web-01", "web-02", "db-01", "cache-01", "lb-01"]
-_HOSTS_PER_LOCATION = {key: 2 + (i % 4) for i, key in enumerate(LOCATIONS)}  # 2 a 5
+_ROLE_GROUPS = {
+    "web": "Aplicações Web",
+    "wms": "Aplicações Web",
+    "db": "Banco de Dados",
+    "fw": "Firewalls",
+    "sw": "Switches",
+    "wan": "Links WAN",
+}
 
-HOST_MAP = {f"{loc}-{role}": loc for loc, n in _HOSTS_PER_LOCATION.items() for role in _ROLES[:n]}
+LOCATIONS = {key: {"label": label} for key, (label, _) in _SITES.items()}
+LOCATIONS.update(
+    {f"grupo-{role}": {"label": label} for role, label in _ROLE_GROUPS.items() if role != "wms"}
+)
+
+
+def _role_group(role):
+    kind = role.split("-")[0]
+    return "grupo-web" if kind == "wms" else f"grupo-{kind}"
+
+
+HOST_MAP = {
+    f"{site}-{role}": [site, _role_group(role)]
+    for site, (_, roles) in _SITES.items()
+    for role in roles
+}
 
 # (nome do trigger, severidade Zabbix 0-5)
 _SCENARIOS = [
@@ -46,8 +65,8 @@ _SCENARIOS = [
     ("Linux: Zabbix agent is not available (for 3m)", 4),
 ]
 
-_MAINTENANCE_HOST = "frankfurt-db-01"
-_FLAKY_HOST = "santiago-web-02"
+_MAINTENANCE_HOST = "palhoca-wms-01"
+_FLAKY_HOST = "biguacu-wan-01"
 
 
 def _h(*parts) -> int:
@@ -69,9 +88,11 @@ def _recurrence(host):
 
 
 def _scenario(host, episode):
-    """Cenário de um episódio. Incidentes graves (High/Disaster) são raros (~0,7%)."""
+    """Cenário de um episódio. Incidentes graves (High/Disaster) são ~4%; nos
+    links WAN, ~1 em 3 (link caído aparece em vermelho com frequência na demo)."""
     k = _h(host, episode)
-    pool = _CRITICAL if k % 150 == 0 else _NORMAL
+    grave = k % 25 == 0 or ("-wan-" in host and k % 3 == 0)
+    pool = _CRITICAL if grave else _NORMAL
     return pool[k % len(pool)]
 
 
@@ -129,6 +150,7 @@ def generate(now: float) -> dict:
                         "severity": severity,
                         "acknowledged": phase >= 1,  # alguém reconhece após 1 min
                         "suppressed": False,
+                        "clock": (minute - phase) * 60,
                     }
                 )
 
@@ -141,6 +163,7 @@ def generate(now: float) -> dict:
                 "severity": 4,
                 "acknowledged": False,
                 "suppressed": True,
+                "clock": (minute - minute % 30) * 60,
             }
         )
 
@@ -148,7 +171,7 @@ def generate(now: float) -> dict:
     if minute % 20 < 5:
         last_data[_FLAKY_HOST] = now - 900
 
-    # Problema de host fora do mapa (conta em unmapped_problems).
+    # Problema de host fora dos grupos do painel (conta em unmapped_problems).
     problems.append(
         {
             "host": "legacy-printer-01",
@@ -156,6 +179,7 @@ def generate(now: float) -> dict:
             "severity": 1,
             "acknowledged": False,
             "suppressed": False,
+            "clock": (minute - minute % 1440) * 60,
         }
     )
 

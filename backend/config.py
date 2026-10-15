@@ -10,29 +10,39 @@ ZABBIX_API_TOKEN = os.environ.get("ZABBIX_API_TOKEN", "")
 if NOC_MODE == "zabbix" and not (ZABBIX_URL and ZABBIX_API_TOKEN):
     raise RuntimeError("Defina ZABBIX_URL e ZABBIX_API_TOKEN, ou use NOC_MODE=demo")
 
-# De onde vêm os locais do globo:
-#   "config"    -> HOST_LOCATION_MAP / LOCATIONS abaixo (padrão)
-#   "inventory" -> inventário de cada host no Zabbix (Location, Latitude, Longitude);
-#                  hosts sem coordenadas no inventário continuam usando o mapa abaixo
-NOC_LOCATIONS_FROM = os.environ.get("NOC_LOCATIONS_FROM", "config").strip().lower()
-if NOC_LOCATIONS_FROM not in ("config", "inventory"):
+# Como os hosts são agrupados nos quadros do painel:
+#   "hostgroup" -> grupos de hosts do Zabbix (padrão). Um host em vários grupos
+#                  aparece em todos eles.
+#   "inventory" -> campo "Location" do inventário de cada host (com Latitude e
+#                  Longitude preenchidas); hosts sem inventário usam o mapa abaixo
+#   "config"    -> HOST_LOCATION_MAP / LOCATIONS abaixo
+# NOC_LOCATIONS_FROM é o nome antigo desta variável e continua aceito.
+NOC_GROUP_BY = (
+    (os.environ.get("NOC_GROUP_BY") or os.environ.get("NOC_LOCATIONS_FROM") or "hostgroup")
+    .strip()
+    .lower()
+)
+if NOC_GROUP_BY not in ("hostgroup", "inventory", "config"):
     raise RuntimeError(
-        f"NOC_LOCATIONS_FROM inválido: {NOC_LOCATIONS_FROM!r} (use 'config' ou 'inventory')"
+        f"NOC_GROUP_BY inválido: {NOC_GROUP_BY!r} (use 'hostgroup', 'inventory' ou 'config')"
     )
-# Opcional: só hosts com esta tag no Zabbix entram no globo (ex.: NOC_HOST_TAG=noc)
+# Só grupos de hosts que começam com este prefixo viram quadros; o prefixo sai
+# do nome exibido (ex.: NOC_HOSTGROUP_PREFIX="NOC/" -> "NOC/Firewalls" vira "Firewalls").
+# Vazio = todos os grupos que tenham hosts monitorados.
+NOC_HOSTGROUP_PREFIX = os.environ.get("NOC_HOSTGROUP_PREFIX", "").strip()
+# Opcional: só hosts com esta tag no Zabbix entram no painel (ex.: NOC_HOST_TAG=noc)
 NOC_HOST_TAG = os.environ.get("NOC_HOST_TAG", "").strip()
-# A lista de hosts do inventário é relida a cada N segundos
+# A lista de hosts e grupos é relida a cada N segundos
 NOC_DISCOVERY_TTL = int(os.environ.get("NOC_DISCOVERY_TTL", 300))
 
-# Mapa estático de hosts -> locais. É usado quando NOC_LOCATIONS_FROM=config
-# (padrão) e, no modo "inventory", como reserva para hosts sem coordenadas.
+# Mapa estático de hosts -> grupos. É usado quando NOC_GROUP_BY=config e, no
+# modo "inventory", como reserva para hosts sem inventário.
 #
-#   HOST_LOCATION_MAP: "nome técnico do host no Zabbix" -> chave do local
-#   LOCATIONS:         chave do local -> rótulo e coordenadas (graus decimais)
+#   HOST_LOCATION_MAP: "nome técnico do host no Zabbix" -> chave do grupo
+#                      (ou lista de chaves, se o host estiver em vários)
+#   LOCATIONS:         chave do grupo -> rótulo (lat/lon são opcionais)
 #
-# O exemplo abaixo usa o "Zabbix server", que existe em toda instalação do
-# Zabbix. Acrescente os seus hosts — ou, melhor, preencha o inventário de cada
-# host no Zabbix e use NOC_LOCATIONS_FROM=inventory (ver README).
+# O exemplo abaixo usa o "Zabbix server", que existe em toda instalação do Zabbix.
 HOST_LOCATION_MAP = {
     "Zabbix server": "matriz",
     # "web-01": "filial-rj",

@@ -25,7 +25,7 @@ from app import app  # noqa: E402
 
 # Só estes arquivos/pastas do frontend são servidos (nunca backend/, .git/ etc.)
 PUBLIC_FILES = {"index.html", "favicon.svg"}
-PUBLIC_DIRS = {"css", "js", "data", "public"}
+PUBLIC_DIRS = {"css", "js", "public"}
 
 
 @app.route("/")

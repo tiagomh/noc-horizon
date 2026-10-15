@@ -84,10 +84,10 @@ Papel (*role*) **somente leitura**, sem acesso à interface, com estes métodos 
 |---|---|
 | `problem.get`, `trigger.get` | Problemas ativos |
 | `item.get` | Detectar hosts sem dados |
-| `host.get` | Locais pelo inventário (`NOC_LOCATIONS_FROM=inventory`) |
+| `host.get` | Grupos de hosts (`NOC_GROUP_BY=hostgroup`, o padrão) e inventário (`inventory`) |
 | `event.get` | Confiabilidade: SLO, MTTR, MTTA |
 
-O grupo do usuário precisa de permissão **Read** nos grupos de hosts exibidos no mapa.
+O grupo do usuário precisa de permissão **Read** nos grupos de hosts exibidos no painel.
 
 ### Trocar o token (rotação)
 
@@ -138,7 +138,8 @@ curl -s http://127.0.0.1:5004/api/locations | python3 -c "import sys,json; [prin
 | **"erro ao conectar: HTTP 502"** no painel | Backend fora do ar ou sem acesso ao Zabbix | `sudo journalctl -u noc-horizon -n 40`. Erros comuns: variável faltando em `/etc/noc-horizon/env`, token revogado, Zabbix fora do ar. |
 | Backend não sobe: **`status=203/EXEC`** | Caminho do Gunicorn errado no serviço | Confira o `ExecStart` e se `/opt/noc-horizon/venv/bin/gunicorn` existe. |
 | Host aparece **"Sem dados"** (cinza) | Host sem itens, agente parado ou sem permissão | Veja a seção 6. |
-| Host **sumiu do globo** | Sem coordenadas no inventário e fora do `config.py` | Preencha *Location*, *Latitude* e *Longitude* no inventário do host. Aparece em até 5 min. |
+| Host ou grupo **não aparece no painel** | Grupo fora do `NOC_HOSTGROUP_PREFIX`, sem permissão *Read* para o usuário da API, host sem a `NOC_HOST_TAG` ou host desativado | Ajuste o grupo/permissão/tag no Zabbix. Aparece em até 5 min (`NOC_DISCOVERY_TTL`). |
+| Painel mostra **erro ao conectar** logo após atualizar | Papel do usuário da API sem `host.get` | Libere `host.get` no papel (*User roles*) ou use `NOC_GROUP_BY=config`. |
 | Confiabilidade mostra **"—"** / `/api/sla` com `ok: false` | Falta `event.get` no papel da API | Libere o método (seção 3) e aguarde até 5 min (cache). |
 | **MTTA vazio** | Nenhum incidente foi reconhecido | Use **Acknowledge** em *Monitoring → Problems*. |
 | Erro de **CSP** no console do navegador | Script de terceiro injetado (ex.: Cloudflare Web Analytics) | Desative o recurso na Cloudflare ou libere o domínio no `Content-Security-Policy`. |

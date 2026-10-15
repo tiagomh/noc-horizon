@@ -118,6 +118,18 @@ def test_demo_tem_numeros_plausiveis():
         4,
     )
     for window in data["windows"].values():
-        assert 98.0 < window["availability"] <= 100.0
+        # grupos pequenos e links WAN instáveis de propósito: ~97-99%
+        assert 95.0 < window["availability"] <= 100.0
         assert window["incidents"] > 0
         assert window["mtta_seconds"] == 60
+
+
+def test_host_em_varios_grupos_derruba_todos():
+    host_map = {"fw1": ["a", "b"]}
+    locations = {"a": {"label": "A"}, "b": {"label": "B"}}
+    inc = {"host": "fw1", "name": "x", "severity": 4, "start": 0, "end": 3600, "ack": None}
+    out = compute_sla(
+        [inc], host_map, locations, now=86400, target=99.5, min_severity=4, windows={"1d": 86400}
+    )
+    by = out["windows"]["1d"]["locations"]
+    assert by["a"] == by["b"] < 100

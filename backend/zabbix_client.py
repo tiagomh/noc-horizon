@@ -38,7 +38,7 @@ def get_active_problems() -> list[dict]:
     problems = _call(
         "problem.get",
         {
-            "output": ["objectid", "name", "severity", "acknowledged", "suppressed"],
+            "output": ["objectid", "clock", "name", "severity", "acknowledged", "suppressed"],
             "recent": False,
         },
     )
@@ -67,6 +67,7 @@ def get_active_problems() -> list[dict]:
                 "severity": int(p.get("severity", 0)),
                 "acknowledged": p.get("acknowledged") == "1",
                 "suppressed": p.get("suppressed") == "1",
+                "clock": int(p.get("clock") or 0),
             }
         )
     return result
@@ -118,6 +119,27 @@ def get_inventory_hosts(tag: str = "") -> list[dict]:
     if tag:
         params["tags"] = [{"tag": tag, "operator": 4}]  # 4 = a tag existe
     return _call("host.get", params)
+
+
+def get_hosts_with_groups(tag: str = "") -> list[dict]:
+    """
+    Hosts monitorados com os nomes dos seus grupos de hosts.
+    Requer o método host.get liberado no papel (role) do usuário da API.
+    Retorna [{"host", "name", "groups": [nome, ...]}].
+    """
+    params = {"output": ["host", "name"], "monitored_hosts": True}
+    if tag:
+        params["tags"] = [{"tag": tag, "operator": 4}]  # 4 = a tag existe
+    try:
+        hosts = _call("host.get", {**params, "selectHostGroups": ["name"]})  # Zabbix >= 6.2
+        key = "hostgroups"
+    except RuntimeError:
+        hosts = _call("host.get", {**params, "selectGroups": ["name"]})  # Zabbix < 6.2
+        key = "groups"
+    return [
+        {"host": h["host"], "name": h.get("name"), "groups": [g["name"] for g in h.get(key, [])]}
+        for h in hosts
+    ]
 
 
 def get_incidents(time_from: float) -> list[dict]:

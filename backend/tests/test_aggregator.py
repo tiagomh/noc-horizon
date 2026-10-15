@@ -171,3 +171,24 @@ def test_local_sem_hosts_fica_unknown():
 def test_sem_hosts_saude_e_none():
     snap = run(host_map={}, last_data={})
     assert snap["summary"]["health_pct"] is None
+
+
+# --- host em vários grupos ----------------------------------------------------
+
+
+def test_host_em_dois_grupos_aparece_nos_dois_e_conta_uma_vez():
+    host_map = {"fw1": ["sp", "rj"], "db1": "rj"}
+    snap = run([prob("fw1", severity=4)], last_data={"fw1": NOW, "db1": NOW}, host_map=host_map)
+    assert loc(snap, "sp")["status"] == "critical"
+    assert loc(snap, "rj")["status"] == "critical"
+    assert [p["host"] for p in loc(snap, "rj")["problems"]] == ["fw1"]
+    s = snap["summary"]
+    assert s["hosts_count"] == 2
+    assert s["hosts_with_problems"] == 1
+    assert s["active_problems"] == 1
+
+
+def test_problema_traz_o_inicio():
+    p = {**prob("web1"), "clock": NOW - 300}
+    assert loc(run([p]), "sp")["problems"][0]["since"] == NOW - 300
+    assert loc(run([prob("web1")]), "sp")["problems"][0]["since"] is None

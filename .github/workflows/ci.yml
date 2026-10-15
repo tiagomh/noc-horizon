@@ -44,7 +44,7 @@ jobs:
         run: for f in js/*.js public/*.js; do node --check "$f"; done
       - name: Sem innerHTML com dados dinâmicos
         run: |
-          if grep -n "innerHTML" js/app.js js/map.js; then
+          if grep -n "innerHTML" js/*.js; then
             echo "::error::innerHTML encontrado — use textContent (risco de XSS)"; exit 1
           fi
 
